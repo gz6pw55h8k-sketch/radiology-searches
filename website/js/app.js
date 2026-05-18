@@ -91,32 +91,6 @@ function initTabs() {
       activateTab(btn);
     });
   });
-
-  document.addEventListener('keydown', function(e) {
-    if (e.key !== 'Tab') return;
-
-    var target = e.target;
-    var tag = target && target.tagName;
-    var isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
-      (target && target.isContentEditable);
-    if (isEditing) return;
-
-    if (!tabBtns.length) return;
-
-    e.preventDefault();
-
-    var activeIdx = tabBtns.findIndex(function(btn) {
-      return btn.classList.contains('active');
-    });
-    if (activeIdx < 0) activeIdx = 0;
-
-    var dir = e.shiftKey ? -1 : 1;
-    var nextIdx = (activeIdx + dir + tabBtns.length) % tabBtns.length;
-    var nextBtn = tabBtns[nextIdx];
-
-    activateTab(nextBtn);
-    nextBtn.focus({ preventScroll: true });
-  });
 }
 
 // ── Auth ──────────────────────────────────────────────────────

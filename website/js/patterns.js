@@ -184,7 +184,7 @@ function loadPattern(id, preferredStepIndex) {
     _openStepIndices = new Set([currentStepIndex]);
   } else {
     currentStepIndex = 0;
-    _openStepIndices = new Set();
+    _openStepIndices = steps.length ? new Set([0]) : new Set();
   }
   updateSidebarButtons(true);
 
@@ -257,6 +257,7 @@ function renderCurrentStep(pattern) {
 
     const item = document.createElement('section');
     item.className = 'step-item';
+    if (step.isRedStep) item.classList.add('step-item-red');
     item.dataset.stepIndex = String(idx);
 
     const toggle = document.createElement('button');
@@ -338,6 +339,7 @@ function resolveLinkedStep(step) {
     const snapshot = step.linkMeta.snapshot;
     return {
       stepTitle: snapshot.stepTitle || step.stepTitle || '',
+      isRedStep: Boolean(snapshot.isRedStep || step.isRedStep),
       richContent: normaliseRichContent(snapshot.richContent || []),
       linkedStepId: String(step.linkedStepId || '').trim(),
       stepId: String(step.stepId || '').trim() || String(snapshot.stepId || '').trim(),
@@ -354,6 +356,7 @@ function resolveLinkedStep(step) {
 
   return {
     stepTitle: shared.stepTitle,
+    isRedStep: Boolean(shared.isRedStep),
     richContent: shared.richContent,
     linkedStepId,
     sections: shared.sections
@@ -377,6 +380,7 @@ function findLinkedStepData(linkedStepId) {
       if (String((step && step.stepId) || '').trim() === target) {
         return {
           stepTitle: step.stepTitle || '',
+          isRedStep: Boolean(step.isRedStep || step.is_red_step || step.stepColorRed),
           richContent: normaliseRichContent(step.richContent || step.rich_content || []),
           sections: normaliseStepSectionsSafe(step.sections, step.richContent || step.rich_content || [])
         };
@@ -391,6 +395,7 @@ function findLinkedStepData(linkedStepId) {
       if (getStepLinkKeyForViewer(step) === target) {
         return {
           stepTitle: step.stepTitle || '',
+          isRedStep: Boolean(step.isRedStep || step.is_red_step || step.stepColorRed),
           richContent: normaliseRichContent(step.richContent || step.rich_content || []),
           sections: normaliseStepSectionsSafe(step.sections, step.richContent || step.rich_content || [])
         };
@@ -482,13 +487,14 @@ function ensureRequiredFindingsSubsections(content) {
     required[requiredIdx] = {
       type: 'subsection',
       title,
+      isRedFinding: Boolean(chunk.isRedFinding),
       content: normaliseRichContent(chunk.content || [])
     };
   });
 
   required.forEach(req => {
     if (typeof req === 'string') {
-      keep.push({ type: 'subsection', title: req, content: [] });
+      keep.push({ type: 'subsection', title: req, isRedFinding: false, content: [] });
     } else {
       keep.push(req);
     }
@@ -501,6 +507,7 @@ function normaliseStepForViewer(step) {
   const fallback = normaliseRichContent((step && (step.richContent || step.rich_content)) || []);
   return {
     stepTitle: (step && step.stepTitle) || '',
+    isRedStep: Boolean(step && (step.isRedStep || step.is_red_step || step.stepColorRed)),
     richContent: fallback,
     stepId: (step && step.stepId) || '',
     linkedStepId: (step && step.linkedStepId) || '',
@@ -642,6 +649,7 @@ function normaliseSubsectionEntries(content) {
     if (chunk.type === 'subsection') {
       entries.push({
         title: (chunk.title || '').trim() || `Subsection ${entries.length + 1}`,
+        isRedFinding: Boolean(chunk.isRedFinding),
         content: normaliseRichContent(chunk.content || [])
       });
       return;
@@ -649,6 +657,7 @@ function normaliseSubsectionEntries(content) {
     if (chunk.type === 'text' && (chunk.text || '').trim()) {
       entries.push({
         title: `Subsection ${entries.length + 1}`,
+        isRedFinding: false,
         content: [{ type: 'text', text: chunk.text, bold: Boolean(chunk.bold), color: chunk.color || null }]
       });
       return;
@@ -656,6 +665,7 @@ function normaliseSubsectionEntries(content) {
     if (chunk.type === 'image' || chunk.type === 'link') {
       entries.push({
         title: `Subsection ${entries.length + 1}`,
+        isRedFinding: false,
         content: [chunk]
       });
       return;
@@ -663,6 +673,7 @@ function normaliseSubsectionEntries(content) {
     if (idx === chunks.length - 1 && !entries.length) {
       entries.push({
         title: 'Subsection 1',
+        isRedFinding: false,
         content: []
       });
     }
@@ -702,6 +713,7 @@ function renderNestedSubsections(container, content) {
   entries.forEach((entry, idx) => {
     const wrap = document.createElement('section');
     wrap.className = 'step-subsection';
+    if (entry.isRedFinding) wrap.classList.add('step-subsection-red');
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -829,11 +841,7 @@ function navigateStep(delta) {
   const next = currentStepIndex + delta;
   if (next < 0 || next >= steps.length) return;
   currentStepIndex = next;
-  if (_accordionMode) {
-    _openStepIndices = new Set([next]);
-  } else {
-    _openStepIndices.add(next);
-  }
+  _openStepIndices = new Set([next]);
   renderCurrentStep(pattern);
 
   const toggle = document.querySelector(`.step-item[data-step-index="${next}"] .step-item-toggle`);
@@ -1057,6 +1065,9 @@ function handleKeydown(e) {
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     e.preventDefault();
     navigateStep(-1);
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    navigateStep(e.shiftKey ? -1 : 1);
   } else if (e.key === ' ') {
     e.preventDefault();
     openRecordModal();
@@ -1202,6 +1213,7 @@ function parseH5File(f) {
       // Normalise step shape
       steps = steps.map(s => ({
         stepTitle:    s.step_title || s.stepTitle || '',
+        isRedStep:    Boolean(s.is_red_step || s.isRedStep || s.stepColorRed),
         richContent:  normaliseRichContent(s.rich_content || s.richContent || []),
         linkedStepId: s.linked_step_id || s.linkedStepId || '',
         sections: normaliseStepSectionsSafe(s.sections, s.rich_content || s.richContent || [])
@@ -1266,6 +1278,7 @@ function normaliseRichContent(richContent) {
       return {
         type: 'subsection',
         title: chunk?.title || chunk?.name || '',
+        isRedFinding: Boolean(chunk?.isRedFinding || chunk?.is_red_finding || chunk?.findingRed),
         content: normaliseRichContent(chunk?.content || [])
       };
     }

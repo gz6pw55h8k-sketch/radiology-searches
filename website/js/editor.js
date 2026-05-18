@@ -48,6 +48,7 @@ function cloneStepSnapshot(step) {
   var sections = normaliseStepSectionsForEditor(safeStep.sections, fallback);
   return {
     stepTitle: safeStep.stepTitle || '',
+    isRedStep: Boolean(safeStep.isRedStep || safeStep.is_red_step || safeStep.stepColorRed),
     stepId: String(safeStep.stepId || '').trim() || makeStepId(),
     linkedStepId: String(safeStep.linkedStepId || '').trim(),
     richContent: normaliseRichContent(fallback),
@@ -76,6 +77,7 @@ function rebuildEditorLinkIndex() {
         stepIndex: idx,
         stepId: stepClone.stepId,
         stepTitle: stepClone.stepTitle || ('Step ' + (idx + 1)),
+        isRedStep: Boolean(stepClone.isRedStep),
         linkedStepId: String(stepClone.linkedStepId || '').trim(),
         richContent: normaliseRichContent(stepClone.richContent || []),
         sections: normaliseStepSectionsForEditor(stepClone.sections, stepClone.richContent || [])
@@ -124,6 +126,7 @@ function resolveLinkedStepForEditor(step) {
     var snapshot = step.linkMeta.snapshot;
     return {
       stepTitle: snapshot.stepTitle || step.stepTitle || '',
+      isRedStep: Boolean(snapshot.isRedStep || step.isRedStep),
       stepId: String(step.stepId || '').trim() || String(snapshot.stepId || '').trim() || makeStepId(),
       linkedStepId: String(step.linkedStepId || '').trim(),
       linkMeta: step.linkMeta,
@@ -140,6 +143,7 @@ function resolveLinkedStepForEditor(step) {
 
   return {
     stepTitle: shared.stepTitle,
+    isRedStep: Boolean(shared.isRedStep),
     stepId: String(step.stepId || '').trim() || makeStepId(),
     linkedStepId,
     linkMeta: step.linkMeta || null,
@@ -153,6 +157,7 @@ function findLinkedStepDataForEditor(linkedStepId) {
   if (!entry) return null;
   return {
     stepTitle: entry.stepTitle || '',
+    isRedStep: Boolean(entry.isRedStep),
     richContent: normaliseRichContent(entry.richContent || []),
     sections: normaliseStepSectionsForEditor(entry.sections, entry.richContent || [])
   };
@@ -226,6 +231,7 @@ function openEditor(uid, patternId, preferredStepIndex) {
     editorSteps = JSON.parse(JSON.stringify(pattern.steps || []))
       .map(step => ({
         stepTitle: step.stepTitle || '',
+        isRedStep: Boolean(step.isRedStep || step.is_red_step || step.stepColorRed),
         stepId: ensureStepId(step),
         linkedStepId: step.linkedStepId || '',
         linkMeta: step.linkMeta || null,
@@ -504,6 +510,7 @@ async function handleAiGeneratePattern() {
 
     const nextSteps = pattern.steps.map(step => ({
       stepTitle: (step && step.stepTitle) || '',
+      isRedStep: false,
       linkedStepId: '',
       richContent: plainTextToRichContent((step && step.content) || ''),
       sections: normaliseStepSectionsForEditor(null, plainTextToRichContent((step && step.content) || ''))
@@ -638,6 +645,7 @@ function addStep() {
   const newIdx = editorSteps.length;
   editorSteps.push({
     stepTitle: `${newIdx + 1}. `,
+    isRedStep: false,
     stepId: makeStepId(),
     richContent: [{ type: 'text', text: '', bold: false, color: null }],
     linkedStepId: '',
@@ -685,7 +693,7 @@ function renderStepEditPanel() {
 
   const step = editorSteps[activeStepIndex];
   ensureStepId(step);
-  const sourceOptions = getActiveStepSourceOptions();
+  const sourceOptions = getActiveStepSourceOptions(); // Get available source patterns
   const currentLinkedSource = findSourceEntryForLinkedId(step.linkedStepId || '');
   const selectedPatternForLink = currentLinkedSource
     ? String(currentLinkedSource.patternId || '')
@@ -695,6 +703,11 @@ function renderStepEditPanel() {
   panel.innerHTML = `
     <label class="form-label">Step Title
       <input id="step-title-input" type="text" class="form-input" value="${escapeHtml(step.stepTitle || '')}" placeholder="e.g. 1. Aorta">
+    </label>
+
+    <label class="step-red-checkbox-row" for="step-red-checkbox">
+      <input id="step-red-checkbox" type="checkbox" ${step.isRedStep ? 'checked' : ''}>
+      <span>Change color of this step to red in main search pattern display</span>
     </label>
 
     <div class="form-label">
@@ -795,6 +808,14 @@ function renderStepEditPanel() {
   `;
 
   // Section tabs — always present
+  const redCheckbox = document.getElementById('step-red-checkbox');
+  if (redCheckbox) {
+    redCheckbox.addEventListener('change', function() {
+      if (activeStepIndex === null || !editorSteps[activeStepIndex]) return;
+      editorSteps[activeStepIndex].isRedStep = Boolean(redCheckbox.checked);
+    });
+  }
+
   Array.from(document.querySelectorAll('.step-section-tab')).forEach(btn => {
     btn.addEventListener('click', () => {
       setActiveStepSection(btn.dataset.sectionKey);
@@ -1107,6 +1128,7 @@ function saveActiveStepToState() {
   const activeStep = editorSteps[activeStepIndex];
   ensureStepId(activeStep);
   activeStep.stepTitle = titleInput.value;
+  activeStep.isRedStep = Boolean((document.getElementById('step-red-checkbox') || {}).checked);
 
   if (!activeStep.linkedStepId && activeStep.linkMeta && activeStep.linkMeta.mode === 'internal') {
     activeStep.linkMeta = null;
@@ -1118,11 +1140,13 @@ function saveActiveStepToState() {
     rows.forEach(row => {
       const title = ((row.querySelector('.subsection-title-input') || {}).value || '').trim();
       const rowEditor = row.querySelector('.subsection-rich-editor');
+      const redCheckbox = row.querySelector('.subsection-red-checkbox');
       const content = rowEditor ? extractRichContent(rowEditor) : [];
       if (!title && !hasAnyRichContent(content)) return;
       subsections.push({
         type: 'subsection',
         title: title || `Subsection ${subsections.length + 1}`,
+        isRedFinding: Boolean(redCheckbox && redCheckbox.checked),
         content: content
       });
     });
@@ -1181,6 +1205,7 @@ function getSubsectionRowsFromContent(content) {
     if (chunk.type === 'subsection') {
       rows.push({
         title: (chunk.title || '').trim(),
+        isRedFinding: Boolean(chunk.isRedFinding),
         content: normaliseRichContent(chunk.content || [])
       });
       return;
@@ -1188,6 +1213,7 @@ function getSubsectionRowsFromContent(content) {
     if (chunk.type === 'text' && (chunk.text || '').trim()) {
       rows.push({
         title: `Subsection ${rows.length + 1}`,
+        isRedFinding: false,
         content: [{ type: 'text', text: chunk.text, bold: Boolean(chunk.bold), color: chunk.color || null }]
       });
       return;
@@ -1195,6 +1221,7 @@ function getSubsectionRowsFromContent(content) {
     if (chunk.type === 'image' || chunk.type === 'link') {
       rows.push({
         title: `Subsection ${rows.length + 1}`,
+        isRedFinding: false,
         content: [chunk]
       });
     }
@@ -1225,18 +1252,23 @@ function renderSubsectionRows(step) {
   container.innerHTML = '';
 
   const rows = getSubsectionRowsFromContent(getCurrentEditorSectionContent(step));
-  rows.forEach(item => container.appendChild(createSubsectionRow(item.title || '', item.content || [])));
+  rows.forEach(item => container.appendChild(createSubsectionRow(item.title || '', item.content || [], Boolean(item.isRedFinding))));
 
   if (!rows.length) {
-    container.appendChild(createSubsectionRow('', []));
+    container.appendChild(createSubsectionRow('', [], false));
   }
 }
 
-function createSubsectionRow(title, content) {
+function createSubsectionRow(title, content, isRedFinding) {
   const row = document.createElement('div');
   row.className = 'subsection-row';
+  const redInputId = `subsection-red-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
   row.innerHTML = `
     <input type="text" class="form-input subsection-title-input" value="${escapeHtml(title)}" placeholder="Subsection title">
+    <label class="subsection-red-row" for="${redInputId}">
+      <input type="checkbox" class="subsection-red-checkbox" id="${redInputId}" ${isRedFinding ? 'checked' : ''}>
+      <span>Show this finding in red in main display</span>
+    </label>
     <div class="rich-toolbar subsection-rich-toolbar" role="toolbar" aria-label="Subsection text formatting">
       <button type="button" class="rich-tool" data-rich-action="bold" title="Bold (Ctrl+B)"><b>B</b></button>
       <button type="button" class="rich-tool rich-tool-red" data-rich-color="red" title="Red text">A</button>
@@ -1264,7 +1296,7 @@ function createSubsectionRow(title, content) {
 function addSubsectionRow() {
   const container = document.getElementById('subsection-rows');
   if (!container) return;
-  const row = createSubsectionRow('', []);
+  const row = createSubsectionRow('', [], false);
   container.appendChild(row);
   row.querySelector('.subsection-title-input').focus();
 }
@@ -1376,6 +1408,7 @@ function applyLinkFromPicker() {
   };
 
   targetStep.stepTitle = sourceEntry.stepTitle || targetStep.stepTitle;
+  targetStep.isRedStep = Boolean(sourceEntry.isRedStep);
   targetStep.richContent = normaliseRichContent(sourceEntry.richContent || []);
   targetStep.sections = normaliseStepSectionsForEditor(sourceEntry.sections, sourceEntry.richContent || []);
 
@@ -1431,6 +1464,7 @@ async function pushCurrentStepToSelectedLink() {
 
   sourceSteps[sourceIdx] = Object.assign({}, existingSourceStep, {
     stepTitle: currentStep.stepTitle || existingSourceStep.stepTitle || '',
+    isRedStep: Boolean(currentStep.isRedStep),
     richContent: normaliseRichContent(currentStep.richContent || []),
     sections: normaliseStepSectionsForEditor(currentStep.sections, currentStep.richContent || []),
     stepId: String(existingSourceStep.stepId || sourceStepId).trim() || sourceStepId
@@ -1588,6 +1622,7 @@ async function prepareStepsForStorage(steps) {
 
     out.push({
       stepTitle: (step && step.stepTitle) || '',
+      isRedStep: Boolean(step && step.isRedStep),
       stepId: String((step && step.stepId) || '').trim() || makeStepId(),
       linkedStepId: (step && step.linkedStepId) || '',
       linkMeta: (step && step.linkMeta) ? JSON.parse(JSON.stringify(step.linkMeta)) : null,
@@ -1624,6 +1659,7 @@ async function compressRichContentForStorage(richContent) {
       out.push({
         type: 'subsection',
         title: chunk.title || '',
+        isRedFinding: Boolean(chunk.isRedFinding),
         content: await compressRichContentForStorage(chunk.content || [])
       });
       continue;
@@ -1972,6 +2008,7 @@ function normaliseRichContent(richContent) {
       return {
         type: 'subsection',
         title: chunk?.title || chunk?.name || '',
+        isRedFinding: Boolean(chunk?.isRedFinding || chunk?.is_red_finding || chunk?.findingRed),
         content: normaliseRichContent(chunk?.content || [])
       };
     }

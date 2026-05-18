@@ -51,6 +51,7 @@ function normaliseSubsectionChunk(chunk) {
   return {
     type: 'subsection',
     title: (chunk && (chunk.title || chunk.name)) || '',
+    isRedFinding: Boolean(chunk && (chunk.isRedFinding || chunk.is_red_finding || chunk.findingRed)),
     content: cloneRichContentForStorage(content)
   };
 }
@@ -158,6 +159,7 @@ function _normalisePatternDoc(doc) {
 
     return {
       stepTitle: (step && (step.stepTitle || step.step_title)) || '',
+      isRedStep: Boolean(step && (step.isRedStep || step.is_red_step || step.stepColorRed)),
       stepId: String((step && (step.stepId || step.step_id)) || '').trim() || _makeStepId(),
       richContent: richContent,
       linkedStepId: (step && (step.linkedStepId || step.linked_step_id)) || '',
@@ -242,6 +244,7 @@ function propagateLinkedSteps(uid, sourcePatternId, sourceSteps, allPatterns) {
 
     var sharedData = {
       stepTitle: (step && step.stepTitle) || '',
+      isRedStep: Boolean(step && step.isRedStep),
       stepId: String((step && step.stepId) || '').trim() || _makeStepId(),
       richContent: cloneRichContentForStorage(step && step.richContent),
       sections: cloneStepSectionsForStorage(step && step.sections, step && step.richContent),
@@ -269,6 +272,7 @@ function propagateLinkedSteps(uid, sourcePatternId, sourceSteps, allPatterns) {
       var shared = linkedMap[currentKey];
       var nextStep = Object.assign({}, step, {
         stepTitle: shared.stepTitle,
+        isRedStep: Boolean(shared.isRedStep),
         stepId: String((step && step.stepId) || '').trim() || shared.stepId || _makeStepId(),
         richContent: cloneRichContentForStorage(shared.richContent),
         linkedStepId: String((step && step.linkedStepId) || '').trim() || currentKey,
@@ -277,9 +281,10 @@ function propagateLinkedSteps(uid, sourcePatternId, sourceSteps, allPatterns) {
       });
 
       var sameTitle = (step.stepTitle || '') === nextStep.stepTitle;
+      var sameRed = Boolean(step && step.isRedStep) === Boolean(nextStep && nextStep.isRedStep);
       var sameRich = JSON.stringify(step.richContent || []) === JSON.stringify(nextStep.richContent || []);
       var sameSections = JSON.stringify(normaliseStepSections(step.sections, step.richContent || [])) === JSON.stringify(nextStep.sections || {});
-      if (!sameTitle || !sameRich || !sameSections) changed = true;
+      if (!sameTitle || !sameRed || !sameRich || !sameSections) changed = true;
 
       return nextStep;
     });

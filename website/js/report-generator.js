@@ -25,6 +25,7 @@ function initReportGenerator(uid) {
 function bindReportGeneratorEvents() {
   var importBtn = document.getElementById('btn-report-template-import');
   var importInput = document.getElementById('report-template-import-input');
+  var saveManualTemplateBtn = document.getElementById('btn-save-manual-template');
   var savePatternBtn = document.getElementById('btn-save-pattern-report-config');
   var generateBtn = document.getElementById('btn-generate-report');
   var copyBtn = document.getElementById('btn-copy-report');
@@ -36,6 +37,7 @@ function bindReportGeneratorEvents() {
     importInput.addEventListener('change', handleImportReportTemplateFile);
   }
 
+  if (saveManualTemplateBtn) saveManualTemplateBtn.addEventListener('click', handleSaveManualTemplate);
   if (savePatternBtn) savePatternBtn.addEventListener('click', handleSavePatternReportConfig);
   if (generateBtn) generateBtn.addEventListener('click', handleGenerateReport);
   if (copyBtn) copyBtn.addEventListener('click', handleCopyReportOutput);
@@ -434,4 +436,28 @@ function handleCopyReportOutput() {
   } catch (err) {
     setReportStatus('Failed to copy report.', true);
   }
+}
+
+function handleSaveManualTemplate() {
+  var inputEl = document.getElementById('manual-template-input');
+  if (!inputEl || !_reportUid || typeof upsertReportTemplate !== 'function') return;
+
+  var templateText = String(inputEl.value || '').trim();
+  if (!templateText) {
+    setReportStatus('Please enter template text before saving.', true);
+    return;
+  }
+
+  var templateName = 'Manual Template';
+
+  upsertReportTemplate(_reportUid, '', { name: templateName, body: templateText })
+    .then(function() {
+      setReportStatus('Manual template saved.');
+      inputEl.value = '';
+      if (typeof showToast === 'function') showToast('Manual template saved.');
+    })
+    .catch(function(err) {
+      setReportStatus((err && err.message) || 'Failed to save manual template.', true);
+      if (typeof showToast === 'function') showToast((err && err.message) || 'Failed to save manual template.', true);
+    });
 }
