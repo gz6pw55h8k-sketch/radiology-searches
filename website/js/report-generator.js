@@ -390,7 +390,8 @@ async function handleImportReportTemplateFile(e) {
     var name = file.name.replace(/\.[^.]+$/, '');
     var body = isRtf ? stripRtfToText(raw) : raw;
 
-    await upsertReportTemplate(_reportUid, '', { name: name, body: body });
+    var templateId = await upsertReportTemplate(_reportUid, '', { name: name, body: body });
+    if (templateId) setSelectedTemplateById(templateId);
     setReportStatus('Template imported (' + (isRtf ? 'RTF parsed' : 'TXT') + ').');
     if (typeof showToast === 'function') showToast('Template imported.');
   } catch (err) {

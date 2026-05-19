@@ -3,6 +3,7 @@
 function _userRef(uid)       { return appDb.collection('users').doc(uid); }
 function _patternsRef(uid)   { return _userRef(uid).collection('patterns'); }
 function _studyLogRef(uid)   { return _userRef(uid).collection('studyLog'); }
+function _reportTemplatesRef(uid) { return _userRef(uid).collection('reportTemplates'); }
 function _now()              { return firebase.firestore.FieldValue.serverTimestamp(); }
 
 var STEP_SECTION_KEYS = ['searchPattern', 'dontMissPathology', 'measurements', 'hyperlinks', 'images'];
@@ -437,6 +438,49 @@ function propagateLinkedSteps(uid, sourcePatternId, sourceSteps, allPatterns) {
 
 function deletePattern(uid, patternId) {
   return _patternsRef(uid).doc(patternId).delete();
+}
+
+// ── Report Templates ─────────────────────────────────────────
+function _normaliseReportTemplateDoc(doc) {
+  return {
+    name: String((doc && doc.name) || '').trim(),
+    body: String((doc && doc.body) || ''),
+    createdAt: doc && doc.createdAt ? doc.createdAt : null,
+    updatedAt: doc && doc.updatedAt ? doc.updatedAt : null
+  };
+}
+
+function subscribeReportTemplates(uid, callback) {
+  return _reportTemplatesRef(uid)
+    .orderBy('updatedAt', 'desc')
+    .onSnapshot(function(snap) {
+      var templates = snap.docs.map(function(d) {
+        return Object.assign({ id: d.id }, _normaliseReportTemplateDoc(d.data() || {}));
+      });
+      callback(templates);
+    }, function(err) {
+      console.error('subscribeReportTemplates error:', err);
+    });
+}
+
+function upsertReportTemplate(uid, templateId, data) {
+  var payload = {
+    name: String(data && data.name || '').trim(),
+    body: String(data && data.body || ''),
+    updatedAt: _now()
+  };
+
+  if (templateId) {
+    payload.createdAt = data && data.createdAt ? data.createdAt : _now();
+    return _reportTemplatesRef(uid).doc(templateId).set(payload, { merge: true }).then(function() {
+      return templateId;
+    });
+  }
+
+  payload.createdAt = _now();
+  return _reportTemplatesRef(uid).add(payload).then(function(ref) {
+    return ref.id;
+  });
 }
 
 // ── Study Log ─────────────────────────────────────────────────

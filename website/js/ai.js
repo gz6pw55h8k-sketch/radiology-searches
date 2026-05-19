@@ -34,6 +34,24 @@ function resolveAiProxyUrl() {
   return AI_PROXY_FUNCTION_URL;
 }
 
+function getAiProxyUrlCandidates() {
+  var candidates = [];
+
+  if (typeof window !== 'undefined' && window.SEARCHES_AI_PROXY_URL) {
+    candidates.push(String(window.SEARCHES_AI_PROXY_URL || '').trim());
+  }
+
+  if (typeof firebaseConfig !== 'undefined' && firebaseConfig && firebaseConfig.aiProxyUrl) {
+    candidates.push(String(firebaseConfig.aiProxyUrl || '').trim());
+  }
+
+  candidates.push('https://us-central1-searches-app.cloudfunctions.net/aiProxy');
+
+  return candidates.filter(function(url, index, list) {
+    return !!url && list.indexOf(url) === index;
+  });
+}
+
 function assertProvider(provider) {
   var key = String(provider || '').trim();
   if (!ALLOWED_AI_PROVIDERS[key]) {
@@ -58,7 +76,6 @@ async function getCurrentUserIdToken() {
 }
 
 async function callAiProxy(action, payload) {
-  var url = resolveAiProxyUrl();
   var token = await getCurrentUserIdToken();
   var headers = {
     'Content-Type': 'application/json'
@@ -66,28 +83,38 @@ async function callAiProxy(action, payload) {
 
   if (token) headers.Authorization = 'Bearer ' + token;
 
-  var res;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        action: action,
-        payload: payload || {}
-      })
-    });
-  } catch (err) {
-    var base = (err && err.message) ? err.message : 'Failed to reach AI proxy.';
-    throw new Error(base + ' Verify network/CORS and proxy URL: ' + url);
+  var requestBody = JSON.stringify({
+    action: action,
+    payload: payload || {}
+  });
+  var urls = getAiProxyUrlCandidates();
+  var lastError = null;
+
+  for (var i = 0; i < urls.length; i += 1) {
+    var url = urls[i];
+    try {
+      var res = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: requestBody
+      });
+
+      var data = await res.json().catch(function() { return {}; });
+      if (!res.ok) {
+        var errMsg = (data && data.error && data.error.message) || (data && data.message) || ('AI proxy request failed (' + res.status + ').');
+        throw new Error(errMsg);
+      }
+
+      AI_PROXY_FUNCTION_URL = url;
+      return data;
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
   }
 
-  var data = await res.json().catch(function() { return {}; });
-  if (!res.ok) {
-    var errMsg = (data && data.error && data.error.message) || (data && data.message) || ('AI proxy request failed (' + res.status + ').');
-    throw new Error(errMsg);
-  }
-
-  return data;
+  var base = (lastError && lastError.message) ? lastError.message : 'Failed to reach AI proxy.';
+  throw new Error(base + ' Tried: ' + urls.join(', '));
 }
 
 function safeJsonParse(text) {

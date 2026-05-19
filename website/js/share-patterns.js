@@ -274,6 +274,13 @@ function subscribeSharedPatterns(callback) {
       },
       err => {
         console.error('Error subscribing to shared patterns:', err);
+        const container = document.getElementById('discover-list-container');
+        if (container) {
+          container.innerHTML = '<p class="discover-empty">Shared patterns are unavailable until Firestore rules allow access.</p>';
+        }
+        if (typeof showToast === 'function') {
+          showToast('Shared patterns need Firestore permissions.', true);
+        }
       }
     );
 }
