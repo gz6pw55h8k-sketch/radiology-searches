@@ -201,6 +201,11 @@ function loadPattern(id, preferredStepIndex) {
   startTimer(pattern);
 
   renderCurrentStep(pattern);
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('pattern-selection-changed', {
+      detail: { patternId: id }
+    }));
+  }
   const viewer = document.getElementById('step-viewer');
   const filterInput = document.getElementById('pattern-filter');
   if (viewer && document.activeElement !== filterInput) {

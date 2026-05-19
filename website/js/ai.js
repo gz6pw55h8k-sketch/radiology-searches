@@ -372,7 +372,8 @@ function coerceReportResponse(parsed, fallbackSections) {
 
 function buildReportGenerationPrompt(input) {
   var findings = String(input.findings || '').trim();
-  var sections = normaliseReportSections(input.sectionOrder);
+  var sections = ['Findings', 'Impression'];
+  var languageMode = String(input.languageMode || 'improve').trim() === 'keep' ? 'keep' : 'improve';
   var templateText = String(input.templateText || '').trim();
   var globalRulesText = String(input.globalRulesText || '').trim();
 
@@ -384,13 +385,17 @@ function buildReportGenerationPrompt(input) {
     'INSTRUCTIONS:',
     '- Write each section in full — never truncate or summarize prematurely.',
     '- Use precise, professional radiology language.',
-    '- Only generate or revise text that is directly supported by the provided findings.',
-    '- Do not add new abnormalities, negatives, normal statements, measurments or modifiers unless they are explicitly supported by the findings.',
+    '- If the findings are sparse, negative, or empty, generate standard normal radiology language for the relevant section rather than leaving it blank.',
+    '- Do not add new abnormalities that are not supported by the findings.',
+    '- Standard normal language is allowed when the findings indicate no abnormality or provide no actionable detail.',
     '- Do not include markdown code fences in your JSON response.',
     '- Set finalized=true and questions=[] in every response.',
+    languageMode === 'keep'
+      ? '- Language handling mode: KEEP EXACT LANGUAGE. Preserve the wording of the findings input as closely as possible. Do not paraphrase or polish the findings content. If the input contains only normal or minimal wording, you may use standard normal report language for the section while keeping the meaning unchanged.'
+      : '- Language handling mode: IMPROVE LANGUAGE. Rewrite the findings into clear, polished radiology language while preserving the exact clinical meaning. If the findings are empty or normal, generate standard normal section language.',
     '',
     'FINDINGS (provided by the radiologist):',
-    findings || '(none provided)'
+    findings || '(no findings provided; generate standard normal language as appropriate)'
   ];
 
   if (templateText) {
@@ -400,13 +405,12 @@ function buildReportGenerationPrompt(input) {
       'The template below defines all required section names and any existing boilerplate.',
       'Use the template section headings as the keys in your "sections" JSON object.',
       'Treat the template as the source of truth for wording outside the supplied findings.',
-      'For each template section, first ask: does the findings input explicitly provide content for this section?',
+      'For each template section, first ask: does the findings input explicitly provide abnormal or specific content for this section?',
       'If YES: update only the specific text supported by the findings.',
-      'If NO: copy that template section verbatim, preserving the original wording exactly.',
-      'Do not paraphrase unchanged template sections.',
-      'Do not fill blanks, placeholders, or optional categories unless the findings explicitly support doing so.',
-      'If a section is not mentioned in the findings, return the template text for that section unchanged.',
-      'Verbatim means preserve the template wording exactly except for JSON escaping.',
+      'If NO: use standard normal radiology language for that section rather than leaving it blank.',
+      'Do not paraphrase unchanged template sections when the section already contains a normal boilerplate line that remains correct.',
+      'Do not invent abnormalities, but do produce a normal statement when the section has nothing abnormal to report.',
+      'If the template section already contains normal boilerplate that fits the findings, preserve it.',
       templateText
     );
   } else {

@@ -228,9 +228,16 @@
               <option value="">No template</option>
             </select>
 
-            <label class="form-label" for="manual-template-input">Manual template</label>
+            <label class="form-label" for="manual-template-name">Template name</label>
+            <input id="manual-template-name" class="form-input" type="text" placeholder="Template name">
+
+            <label class="form-label" for="manual-template-input">Template body</label>
             <textarea id="manual-template-input" class="form-input" rows="5" placeholder="Paste or type template text..."></textarea>
-            <button id="btn-save-manual-template" class="btn btn-ghost btn-sm" type="button">Save manual template</button>
+
+            <div class="report-template-actions">
+              <button id="btn-save-manual-template" class="btn btn-ghost btn-sm" type="button">Save / Update template</button>
+              <button id="btn-delete-manual-template" class="btn btn-danger btn-sm" type="button">Delete selected template</button>
+            </div>
 
             <button id="btn-report-template-import" class="btn btn-ghost btn-sm" type="button">Import template</button>
             <input id="report-template-import-input" type="file" accept=".rtf,.txt" style="display:none">
@@ -249,8 +256,11 @@
             <label class="form-label" for="report-findings-input">Findings input</label>
             <textarea id="report-findings-input" class="form-input" rows="7" placeholder="Enter findings here..."></textarea>
 
-            <label class="form-label" for="report-section-order">Output sections (comma separated)</label>
-            <input id="report-section-order" type="text" class="form-input" placeholder="Findings, Impression">
+            <label class="form-label" for="report-language-mode">Language handling</label>
+            <select id="report-language-mode" class="form-input">
+              <option value="keep">Keep exactly the same language</option>
+              <option value="improve" selected>Improve language</option>
+            </select>
 
             <div class="report-actions">
               <button id="btn-generate-report" class="btn btn-accent" type="button">Generate report</button>

@@ -212,6 +212,11 @@ function _normalisePatternDoc(doc) {
   });
 
   return {
+    reportConfig: (doc && doc.reportConfig && typeof doc.reportConfig === 'object') ? {
+      selectedTemplateId: String(doc.reportConfig.selectedTemplateId || '').trim(),
+      selectedTemplateName: String(doc.reportConfig.selectedTemplateName || '').trim(),
+      sectionOrder: Array.isArray(doc.reportConfig.sectionOrder) ? doc.reportConfig.sectionOrder.slice() : []
+    } : null,
     name: doc.name || doc.pattern_name || '',
     modality: doc.modality || 'Other',
     steps: steps,
@@ -236,6 +241,7 @@ function createPattern(uid, data) {
     name: data.name,
     modality: data.modality || 'Other',
     steps: data.steps || [],
+    reportConfig: data.reportConfig && typeof data.reportConfig === 'object' ? data.reportConfig : null,
     goalSeconds: goalSeconds,
     updatedAt: _now()
   }).then(function(ref) { return ref.id; });
@@ -246,6 +252,7 @@ function updatePattern(uid, patternId, data) {
     name: data.name,
     modality: data.modality || 'Other',
     steps: data.steps || [],
+    reportConfig: data.reportConfig && typeof data.reportConfig === 'object' ? data.reportConfig : null,
     updatedAt: _now()
   };
   if (Object.prototype.hasOwnProperty.call(data, 'goalSeconds') || Object.prototype.hasOwnProperty.call(data, 'goalMinutes')) {
@@ -258,6 +265,13 @@ function updatePatternGoalSeconds(uid, patternId, goalSeconds) {
   var normalisedGoal = _normaliseGoalSeconds(goalSeconds, null);
   return _patternsRef(uid).doc(patternId).update({
     goalSeconds: normalisedGoal,
+    updatedAt: _now()
+  });
+}
+
+function updatePatternReportConfig(uid, patternId, reportConfig) {
+  return _patternsRef(uid).doc(patternId).update({
+    reportConfig: reportConfig && typeof reportConfig === 'object' ? reportConfig : null,
     updatedAt: _now()
   });
 }
@@ -445,17 +459,29 @@ function _normaliseReportTemplateDoc(doc) {
   return {
     name: String((doc && doc.name) || '').trim(),
     body: String((doc && doc.body) || ''),
+    patternId: String((doc && doc.patternId) || '').trim(),
     createdAt: doc && doc.createdAt ? doc.createdAt : null,
     updatedAt: doc && doc.updatedAt ? doc.updatedAt : null
   };
 }
 
-function subscribeReportTemplates(uid, callback) {
+function subscribeReportTemplates(uid, patternId, callback) {
+  var scopedPatternId = String(patternId || '').trim();
+  if (!scopedPatternId) {
+    callback([]);
+    return function() {};
+  }
+
   return _reportTemplatesRef(uid)
-    .orderBy('updatedAt', 'desc')
+    .where('patternId', '==', scopedPatternId)
     .onSnapshot(function(snap) {
       var templates = snap.docs.map(function(d) {
         return Object.assign({ id: d.id }, _normaliseReportTemplateDoc(d.data() || {}));
+      });
+      templates.sort(function(a, b) {
+        var aMs = (a && a.updatedAt && typeof a.updatedAt.toMillis === 'function') ? a.updatedAt.toMillis() : 0;
+        var bMs = (b && b.updatedAt && typeof b.updatedAt.toMillis === 'function') ? b.updatedAt.toMillis() : 0;
+        return bMs - aMs;
       });
       callback(templates);
     }, function(err) {
@@ -467,11 +493,15 @@ function upsertReportTemplate(uid, templateId, data) {
   var payload = {
     name: String(data && data.name || '').trim(),
     body: String(data && data.body || ''),
+    patternId: String(data && data.patternId || '').trim(),
     updatedAt: _now()
   };
 
+  if (!payload.patternId) {
+    throw new Error('Report template must be saved for a selected pattern.');
+  }
+
   if (templateId) {
-    payload.createdAt = data && data.createdAt ? data.createdAt : _now();
     return _reportTemplatesRef(uid).doc(templateId).set(payload, { merge: true }).then(function() {
       return templateId;
     });
@@ -481,6 +511,10 @@ function upsertReportTemplate(uid, templateId, data) {
   return _reportTemplatesRef(uid).add(payload).then(function(ref) {
     return ref.id;
   });
+}
+
+function deleteReportTemplate(uid, templateId) {
+  return _reportTemplatesRef(uid).doc(templateId).delete();
 }
 
 // ── Study Log ─────────────────────────────────────────────────

@@ -5,14 +5,17 @@ var _reportTemplates = [];
 var _unsubscribeReportTemplates = null;
 var _reportLastDraftSections = {};
 var _pendingTemplateSelection = '';
+var _reportSelectedPatternId = '';
+var REPORT_OUTPUT_SECTIONS = ['Findings', 'Impression'];
 
 function initReportGenerator(uid) {
   _reportUid = uid;
   bindReportGeneratorEvents();
-  subscribeReportTemplateList();
+  subscribeReportTemplateListForSelectedPattern();
   refreshReportPatternContext();
 
   window.addEventListener('pattern-selection-changed', function() {
+    subscribeReportTemplateListForSelectedPattern();
     refreshReportPatternContext();
   });
 
@@ -26,7 +29,11 @@ function initReportGenerator(uid) {
 function bindReportGeneratorEvents() {
   var importBtn = document.getElementById('btn-report-template-import');
   var importInput = document.getElementById('report-template-import-input');
+  var templateSelect = document.getElementById('report-template-select');
+  var templateNameInput = document.getElementById('manual-template-name');
+  var templateBodyInput = document.getElementById('manual-template-input');
   var saveManualTemplateBtn = document.getElementById('btn-save-manual-template');
+  var deleteManualTemplateBtn = document.getElementById('btn-delete-manual-template');
   var savePatternBtn = document.getElementById('btn-save-pattern-report-config');
   var generateBtn = document.getElementById('btn-generate-report');
   var copyBtn = document.getElementById('btn-copy-report');
@@ -38,20 +45,44 @@ function bindReportGeneratorEvents() {
     importInput.addEventListener('change', handleImportReportTemplateFile);
   }
 
+  if (templateSelect) {
+    templateSelect.addEventListener('change', handleTemplateSelectionChange);
+  }
+
+  if (templateNameInput) {
+    templateNameInput.addEventListener('input', handleTemplateEditorChange);
+  }
+
+  if (templateBodyInput) {
+    templateBodyInput.addEventListener('input', handleTemplateEditorChange);
+  }
+
   if (saveManualTemplateBtn) saveManualTemplateBtn.addEventListener('click', handleSaveManualTemplate);
+  if (deleteManualTemplateBtn) deleteManualTemplateBtn.addEventListener('click', handleDeleteManualTemplate);
   if (savePatternBtn) savePatternBtn.addEventListener('click', handleSavePatternReportConfig);
   if (generateBtn) generateBtn.addEventListener('click', handleGenerateReport);
   if (copyBtn) copyBtn.addEventListener('click', handleCopyReportOutput);
 }
 
-function subscribeReportTemplateList() {
+function subscribeReportTemplateListForSelectedPattern() {
   if (!_reportUid || typeof subscribeReportTemplates !== 'function') return;
+
+  var pattern = getSelectedPatternForReport();
+  var patternId = String((pattern && pattern.id) || '').trim();
+  _reportSelectedPatternId = patternId;
+
   if (_unsubscribeReportTemplates) {
     _unsubscribeReportTemplates();
     _unsubscribeReportTemplates = null;
   }
 
-  _unsubscribeReportTemplates = subscribeReportTemplates(_reportUid, function(templates) {
+  if (!patternId) {
+    _reportTemplates = [];
+    renderReportTemplateOptions();
+    return;
+  }
+
+  _unsubscribeReportTemplates = subscribeReportTemplates(_reportUid, patternId, function(templates) {
     _reportTemplates = Array.isArray(templates) ? templates : [];
     renderReportTemplateOptions();
     refreshReportPatternContext();
@@ -85,15 +116,13 @@ function getSelectedPatternForReport() {
 
 function refreshReportPatternContext() {
   var contextEl = document.getElementById('report-pattern-context');
-  var sectionOrderEl = document.getElementById('report-section-order');
   var templateSelectEl = document.getElementById('report-template-select');
 
   var pattern = getSelectedPatternForReport();
-  if (!contextEl || !sectionOrderEl || !templateSelectEl) return;
+  if (!contextEl || !templateSelectEl) return;
 
   if (!pattern) {
     contextEl.textContent = 'No search pattern selected. Select one in Search Patterns to attach report context.';
-    if (!sectionOrderEl.value.trim()) applyDefaultSectionsIfNeeded();
     return;
   }
 
@@ -101,21 +130,8 @@ function refreshReportPatternContext() {
 
   var cfg = (pattern.reportConfig && typeof pattern.reportConfig === 'object') ? pattern.reportConfig : {};
 
-  if (Array.isArray(cfg.sectionOrder) && cfg.sectionOrder.length) {
-    sectionOrderEl.value = cfg.sectionOrder.join(', ');
-  } else if (!sectionOrderEl.value.trim()) {
-    applyDefaultSectionsIfNeeded();
-  }
-
   var templateId = String(cfg.selectedTemplateId || '').trim();
   if (templateId) templateSelectEl.value = templateId;
-}
-
-function parseSectionOrderInput(raw, fallback) {
-  var items = String(raw || '').split(',').map(function(item) { return item.trim(); }).filter(Boolean);
-  if (items.length) return items;
-  if (Array.isArray(fallback) && fallback.length) return fallback.slice();
-  return ['Findings', 'Impression'];
 }
 
 function getReportSettingsSnapshotSafe() {
@@ -128,16 +144,10 @@ function getReportSettingsSnapshotSafe() {
   };
 }
 
-function applyDefaultSectionsIfNeeded() {
-  var sectionInput = document.getElementById('report-section-order');
-  if (!sectionInput) return;
-  if (sectionInput.value && sectionInput.value.trim()) return;
-
-  var settings = getReportSettingsSnapshotSafe();
-  var sections = Array.isArray(settings.defaultSections) && settings.defaultSections.length
-    ? settings.defaultSections
-    : ['Findings', 'Impression'];
-  sectionInput.value = sections.join(', ');
+function getReportLanguageMode() {
+  var select = document.getElementById('report-language-mode');
+  var mode = select ? String(select.value || '').trim() : '';
+  return mode === 'keep' ? 'keep' : 'improve';
 }
 
 function escapeHtmlText(value) {
@@ -160,9 +170,46 @@ function getSelectedTemplate() {
   return _reportTemplates.find(function(item) { return item.id === templateId; }) || null;
 }
 
+function getTemplateEditorState() {
+  var nameEl = document.getElementById('manual-template-name');
+  var bodyEl = document.getElementById('manual-template-input');
+  return {
+    name: nameEl ? String(nameEl.value || '').trim() : '',
+    body: bodyEl ? String(bodyEl.value || '').trim() : ''
+  };
+}
+
 function getManualTemplateText() {
   var inputEl = document.getElementById('manual-template-input');
   return inputEl ? String(inputEl.value || '').trim() : '';
+}
+
+function populateTemplateEditorFromSelection() {
+  var selected = getSelectedTemplate();
+  var nameEl = document.getElementById('manual-template-name');
+  var bodyEl = document.getElementById('manual-template-input');
+
+  if (!nameEl || !bodyEl) return;
+
+  if (!selected) {
+    nameEl.value = '';
+    bodyEl.value = '';
+    return;
+  }
+
+  nameEl.value = selected.name || '';
+  bodyEl.value = selected.body || '';
+}
+
+function handleTemplateSelectionChange() {
+  populateTemplateEditorFromSelection();
+}
+
+function handleTemplateEditorChange() {
+  var selected = getSelectedTemplate();
+  if (selected) {
+    _pendingTemplateSelection = selected.id;
+  }
 }
 
 function setSelectedTemplateById(templateId) {
@@ -171,6 +218,7 @@ function setSelectedTemplateById(templateId) {
   if (!select || !value) return;
   select.value = value;
   _pendingTemplateSelection = value;
+  populateTemplateEditorFromSelection();
 }
 
 function setReportStatus(text, isError) {
@@ -333,20 +381,14 @@ function renderDraftSections(sections) {
 
 async function handleGenerateReport() {
   var findingsEl = document.getElementById('report-findings-input');
-  var sectionOrderEl = document.getElementById('report-section-order');
-  if (!findingsEl || !sectionOrderEl) return;
+  if (!findingsEl) return;
 
   var findings = String(findingsEl.value || '').trim();
-  if (!findings) {
-    setReportStatus('Please enter findings before generating.', true);
-    return;
-  }
-
   var settings = getReportSettingsSnapshotSafe();
   var pattern = getSelectedPatternForReport();
   var template = getSelectedTemplate();
-  var manualTemplateText = getManualTemplateText();
-  var sections = parseSectionOrderInput(sectionOrderEl.value, settings.defaultSections);
+  var templateState = getTemplateEditorState();
+  var languageMode = getReportLanguageMode();
 
   setReportStatus('Generating report...');
 
@@ -355,8 +397,9 @@ async function handleGenerateReport() {
       provider: typeof getSelectedAiProvider === 'function' ? getSelectedAiProvider() : 'openai',
       model: typeof getSelectedAiModel === 'function' ? getSelectedAiModel() : '',
       findings: findings,
-      sectionOrder: sections,
-      templateText: manualTemplateText || (template ? template.body : ''),
+      sectionOrder: REPORT_OUTPUT_SECTIONS,
+      languageMode: languageMode,
+      templateText: templateState.body || (template ? template.body : ''),
       globalRulesText: String(settings.globalRulesText || '')
     });
 
@@ -390,7 +433,17 @@ async function handleImportReportTemplateFile(e) {
     var name = file.name.replace(/\.[^.]+$/, '');
     var body = isRtf ? stripRtfToText(raw) : raw;
 
-    var templateId = await upsertReportTemplate(_reportUid, '', { name: name, body: body });
+    if (!_reportSelectedPatternId) {
+      setReportStatus('Select a search pattern before importing a template.', true);
+      if (typeof showToast === 'function') showToast('Select a search pattern before importing a template.', true);
+      return;
+    }
+
+    var templateId = await upsertReportTemplate(_reportUid, '', {
+      name: name,
+      body: body,
+      patternId: _reportSelectedPatternId
+    });
     if (templateId) setSelectedTemplateById(templateId);
     setReportStatus('Template imported (' + (isRtf ? 'RTF parsed' : 'TXT') + ').');
     if (typeof showToast === 'function') showToast('Template imported.');
@@ -404,7 +457,6 @@ async function handleImportReportTemplateFile(e) {
 
 async function handleSavePatternReportConfig() {
   var pattern = getSelectedPatternForReport();
-  var sectionOrderEl = document.getElementById('report-section-order');
   var template = getSelectedTemplate();
 
   if (!pattern || !_reportUid || typeof updatePatternReportConfig !== 'function') {
@@ -412,13 +464,11 @@ async function handleSavePatternReportConfig() {
     return;
   }
 
-  if (!sectionOrderEl) return;
-
   try {
     await updatePatternReportConfig(_reportUid, pattern.id, {
       selectedTemplateId: template ? template.id : '',
       selectedTemplateName: template ? template.name : '',
-      sectionOrder: parseSectionOrderInput(sectionOrderEl.value, ['Findings', 'Impression'])
+      sectionOrder: REPORT_OUTPUT_SECTIONS
     });
     setReportStatus('Pattern report config saved.');
     if (typeof showToast === 'function') showToast('Pattern report config saved.');
@@ -460,25 +510,65 @@ function handleCopyReportOutput() {
 }
 
 function handleSaveManualTemplate() {
-  var inputEl = document.getElementById('manual-template-input');
-  if (!inputEl || !_reportUid || typeof upsertReportTemplate !== 'function') return;
+  if (!_reportUid || typeof upsertReportTemplate !== 'function') return;
 
-  var templateText = String(inputEl.value || '').trim();
-  if (!templateText) {
+  if (!_reportSelectedPatternId) {
+    setReportStatus('Select a search pattern before saving a template.', true);
+    return;
+  }
+
+  var templateState = getTemplateEditorState();
+  if (!templateState.body) {
     setReportStatus('Please enter template text before saving.', true);
     return;
   }
 
-  var templateName = 'Manual Template';
+  var selected = getSelectedTemplate();
+  var templateId = selected ? selected.id : '';
+  var templateName = templateState.name || (selected ? selected.name : '') || 'Manual Template';
 
-  upsertReportTemplate(_reportUid, '', { name: templateName, body: templateText })
+  upsertReportTemplate(_reportUid, templateId, {
+    name: templateName,
+    body: templateState.body,
+    patternId: _reportSelectedPatternId
+  })
     .then(function(savedTemplateId) {
       if (savedTemplateId) setSelectedTemplateById(savedTemplateId);
-      setReportStatus('Manual template saved.');
+      setReportStatus(templateId ? 'Template updated.' : 'Template saved.');
       if (typeof showToast === 'function') showToast('Manual template saved.');
     })
     .catch(function(err) {
       setReportStatus((err && err.message) || 'Failed to save manual template.', true);
       if (typeof showToast === 'function') showToast((err && err.message) || 'Failed to save manual template.', true);
     });
+}
+
+async function handleDeleteManualTemplate() {
+  var selected = getSelectedTemplate();
+  if (!selected || !_reportUid || typeof deleteReportTemplate !== 'function') {
+    setReportStatus('Select a template to delete.', true);
+    return;
+  }
+
+  var confirmed = true;
+  if (typeof showConfirm === 'function') {
+    confirmed = await showConfirm('Delete template?', 'Delete "' + selected.name + '"? This cannot be undone.');
+  } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    confirmed = window.confirm('Delete "' + selected.name + '"? This cannot be undone.');
+  }
+
+  if (!confirmed) return;
+
+  try {
+    await deleteReportTemplate(_reportUid, selected.id);
+    _pendingTemplateSelection = '';
+    var select = document.getElementById('report-template-select');
+    if (select) select.value = '';
+    populateTemplateEditorFromSelection();
+    setReportStatus('Template deleted.');
+    if (typeof showToast === 'function') showToast('Template deleted.');
+  } catch (err) {
+    setReportStatus((err && err.message) || 'Failed to delete template.', true);
+    if (typeof showToast === 'function') showToast((err && err.message) || 'Failed to delete template.', true);
+  }
 }
