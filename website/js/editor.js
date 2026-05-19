@@ -797,9 +797,7 @@ function addStep() {
     richContent: [{ type: 'text', text: '', bold: false, color: null }],
     linkedStepId: '',
     sectionLinks: {},
-    sectionLinks: {},
     linkMeta: null,
-    sectionLinks: {},
     sections: normaliseStepSectionsForEditor(null, [{ type: 'text', text: '', bold: false, color: null }])
   });
   activeStepIndex = editorSteps.length - 1;
@@ -853,6 +851,11 @@ function renderStepEditPanel() {
       <input id="step-red-checkbox" type="checkbox" ${step.isRedStep ? 'checked' : ''}>
       <span>Change color of this step to red in main search pattern display</span>
     </label>
+
+    <div class="section-link-inline">
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-link-entire-step">Link Entire Step...</button>
+      <span class="section-link-current" id="entire-step-link-current">${escapeHtml(getCurrentStepLinkedSourceLabel(step))}</span>
+    </div>
 
     <div class="form-label">
       <span>Section Content</span>
@@ -934,6 +937,13 @@ function renderStepEditPanel() {
       setActiveStepSection(btn.dataset.sectionKey);
     });
   });
+
+  const entireStepLinkBtn = document.getElementById('btn-link-entire-step');
+  if (entireStepLinkBtn) {
+    entireStepLinkBtn.addEventListener('click', function() {
+      openContentLinkModal({ type: 'fullStep' });
+    });
+  }
 
   if (isSubsectionSectionKey(activeStepSectionKey)) {
     renderSubsectionRows(step);
@@ -1527,6 +1537,14 @@ function getCurrentContentLinkLabel() {
     return (link.sourcePatternName || 'Pattern') + ' / ' + (link.sourceStepTitle || 'Step');
   }
 
+  if (_contentLinkContext.type === 'fullStep') {
+    var linkedId = String(step.linkedStepId || '').trim();
+    if (!linkedId) return 'No link set.';
+    var source = findSourceEntryForLinkedId(linkedId);
+    if (!source) return 'Linked source not found.';
+    return (source.patternName || 'Pattern') + ' / ' + (source.stepTitle || 'Step');
+  }
+
   var finding = findStepSubsectionById(step, _contentLinkContext.subsectionId);
   if (!finding || !finding.linkMeta || !finding.linkMeta.sourceSubsectionId) return 'No link set.';
   return (finding.linkMeta.sourcePatternName || 'Pattern') + ' / '
@@ -1696,7 +1714,9 @@ function openContentLinkModal(context) {
 
   targetLabel.textContent = context && context.type === 'finding'
     ? 'Target: Findings section'
-    : 'Target: Search Pattern section';
+    : (context && context.type === 'fullStep'
+      ? 'Target: Entire step'
+      : 'Target: Search Pattern section');
 
   var options = getActiveStepSourceOptions();
   var patternIds = options
@@ -1747,7 +1767,30 @@ async function applyContentLinkFromModal() {
   var step = editorSteps[activeStepIndex];
   if (!step.sectionLinks || typeof step.sectionLinks !== 'object') step.sectionLinks = {};
 
-  if (_contentLinkContext.type === 'searchPattern') {
+  if (_contentLinkContext.type === 'fullStep') {
+    var sourceStepId = String(sourceEntry.stepId || '').trim();
+    if (!sourceStepId) {
+      showToast('Selected source step is missing an ID.', true);
+      return;
+    }
+
+    step.linkedStepId = sourceStepId;
+    step.linkMeta = {
+      mode: 'internal',
+      sourcePatternId: sourceEntry.patternId,
+      sourcePatternName: sourceEntry.patternName,
+      sourceStepId: sourceEntry.stepId,
+      sourceStepTitle: sourceEntry.stepTitle,
+      targetType: 'fullStep',
+      tokenVersion: 1
+    };
+    step.stepTitle = sourceEntry.stepTitle || step.stepTitle;
+    step.isRedStep = Boolean(sourceEntry.isRedStep);
+    step.richContent = normaliseRichContent(sourceEntry.richContent || []);
+    step.sections = normaliseStepSectionsForEditor(sourceEntry.sections, sourceEntry.richContent || []);
+    step.sectionLinks = normaliseSectionLinksMeta(sourceEntry.sectionLinks);
+    showToast('Linked entire step.');
+  } else if (_contentLinkContext.type === 'searchPattern') {
     var sourceSections = normaliseStepSectionsForEditor(sourceEntry.sections, sourceEntry.richContent || []);
     step.sections = normaliseStepSectionsForEditor(step.sections, step.richContent || []);
     step.sections.searchPattern = normaliseRichContent(sourceSections.searchPattern || []);
@@ -1834,7 +1877,11 @@ function unlinkContentLinkFromModal() {
   if (activeStepIndex === null || !editorSteps[activeStepIndex]) return;
 
   var step = editorSteps[activeStepIndex];
-  if (_contentLinkContext.type === 'searchPattern') {
+  if (_contentLinkContext.type === 'fullStep') {
+    step.linkedStepId = '';
+    step.linkMeta = null;
+    showToast('Entire step link removed.');
+  } else if (_contentLinkContext.type === 'searchPattern') {
     if (step.sectionLinks && step.sectionLinks.searchPattern) {
       delete step.sectionLinks.searchPattern;
     }
