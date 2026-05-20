@@ -726,16 +726,8 @@ function renderNestedSubsections(container, content) {
     btn.type = 'button';
     btn.className = 'step-subsection-toggle';
     btn.setAttribute('aria-expanded', 'false');
-    const hasFindingLink = Boolean(
-      entry.linkMeta
-      && (entry.linkMeta.sourceSubsectionId || entry.linkMeta.sourceStepId || entry.linkMeta.sourcePatternId)
-    );
-    const linkedMeta = hasFindingLink
-      ? ((entry.linkMeta.sourcePatternName || 'Pattern') + ' / ' + (entry.linkMeta.sourceStepTitle || 'Step'))
-      : '';
     btn.innerHTML = `
       <span>${entry.title || `Subsection ${idx + 1}`}</span>
-      ${hasFindingLink ? `<span class="step-subsection-linked-meta">Linked to: ${escapeHtml(linkedMeta)}</span>` : ''}
       <span class="step-subsection-chevron" aria-hidden="true">▸</span>
     `;
 
